@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Real-time Voice Chat with ChatGPT</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Real-time Voice Chat with ChatGPT</h1>
+        <div class="chat-container">
+            <button id="startBtn" onclick="startRecording()">🎤 Start Recording</button>
+            <button id="stopBtn" onclick="stopRecording()" disabled>🛑 Stop Recording</button>
+        </div>
+        <div id="responseContainer" class="response-container">
+            <p id="responseText">Your response will appear here...</p>
+        </div>
+        <audio id="audioPlayback" controls hidden></audio>
+    </div>
+
+    <script>
+        let websocket;
+        let mediaRecorder;
+        let audioChunks = [];
+
+        const startBtn = document.getElementById("startBtn");
+        const stopBtn = document.getElementById("stopBtn");
+        const responseText = document.getElementById("responseText");
+        const audioPlayback = document.getElementById("audioPlayback");
+
+        async function startRecording() {
+            // Open WebSocket connection
+            websocket = new WebSocket("ws://localhost:8000/ws/audio");
+
+            websocket.onopen = () => {
+                console.log("WebSocket connection opened.");
+            };
+
+            websocket.onmessage = (event) => {
+                const audioBlob = new Blob([event.data], { type: 'audio/wav' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                audioPlayback.src = audioUrl;
+                audioPlayback.hidden = false;
+                audioPlayback.play();
+                responseText.innerText = "Received response audio.";
+            };
+
+            websocket.onerror = (error) => {
+                console.error("WebSocket error:", error);
+                responseText.innerText = "WebSocket error. Check console for details.";
+            };
+
+            websocket.onclose = () => {
+                console.log("WebSocket connection closed.");
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            };
+
+            // Access the user's microphone
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (websocket.readyState === WebSocket.OPEN) {
+                        websocket.send(event.data);
+                    }
+                };
+
+                mediaRecorder.onstart = () => {
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    responseText.innerText = "Recording... Say something!";
+                };
+
+                mediaRecorder.start(100); // Record in small chunks
+            } catch (error) {
+                console.error("Error accessing microphone:", error);
+                responseText.innerText = "Microphone access denied or unavailable.";
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+                responseText.innerText = "Processing your response...";
+            }
+
+            if (websocket) {
+                websocket.close();
+            }
+        }
+    </script>
+</body>
+</html>
